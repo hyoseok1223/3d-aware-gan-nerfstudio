@@ -128,34 +128,38 @@ class VanillaGanPipeline(Pipeline):
             step: current iteration step to update sampler if using DDP (distributed)
             type: current update model type which 'g' or 'd' ('generator' or 'discriminator')
         """
+        # FIXME = metrics dict 하는거 아직 안만드어짐
+        metrics_dict = None
+
         img_idx, camera_ray_bundle, batch = self.datamanager.next_train(step)
         # REVIEW = latent 
         latent = self._sample_latent(batch_size = self.config.datamanager.train_num_images_to_sample_from,z_dim = self.config.model.z_dim)
-        model_outputs = self.model(ray_bundle, latent) 
+        model_outputs = self.model(camera_ray_bundle, latent) 
         if type is 'g':
             self.model.freeze_discriminator()
             fake_pred = self.model.get_discriminator(model_outputs)
-            loss_dict = self.model.get_loss_dict([fake_pred], batch, metrics_dict, step)
+            loss_dict = self.model.get_loss_dict([fake_pred], batch, step, metrics_dict)
             self.model.unlock_discriminator()
         elif type is 'd':
             self.model.freeze_field()
             fake_pred, real_pred = self.model.get_discriminator(model_outputs, batch)
-            loss_dict = self.model.get_loss_dict([fake_pred, real_pred], batch, metrics_dict, step)
+            loss_dict = self.model.get_loss_dict([fake_pred, real_pred], batch, step, metrics_dict)
             self.model.unlock_field()
 
 
         #NOTE - Fake Image Quality Metric
         metrics_dict = self.model.get_metrics_dict(model_outputs, batch)
 
-        camera_opt_param_group = self.config.datamanager.camera_optimizer.param_group
-        if camera_opt_param_group in self.datamanager.get_param_groups():
-            # Report the camera optimization metrics
-            metrics_dict["camera_opt_translation"] = (
-                self.datamanager.get_param_groups()[camera_opt_param_group][0].data[:, :3].norm()
-            )
-            metrics_dict["camera_opt_rotation"] = (
-                self.datamanager.get_param_groups()[camera_opt_param_group][0].data[:, 3:].norm()
-            )
+        # FIXME - camera optimizer  don;y use
+        # camera_opt_param_group = self.config.datamanager.camera_optimizer.param_group
+        # if camera_opt_param_group in self.datamanager.get_param_groups():
+        #     # Report the camera optimization metrics
+        #     metrics_dict["camera_opt_translation"] = (
+        #         self.datamanager.get_param_groups()[camera_opt_param_group][0].data[:, :3].norm()
+        #     )
+        #     metrics_dict["camera_opt_rotation"] = (
+        #         self.datamanager.get_param_groups()[camera_opt_param_group][0].data[:, 3:].norm()
+        #     )
 
         
         return model_outputs, loss_dict, metrics_dict
@@ -285,6 +289,6 @@ class VanillaGanPipeline(Pipeline):
         Returns:
             torch tensor [B, z_dim] 
         """
-        z = torch.randn((batch_size,z_dim), device = self.device()) 
+        z = torch.randn((batch_size,z_dim), device = self.device) 
        
         return z

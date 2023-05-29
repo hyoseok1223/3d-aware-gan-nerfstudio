@@ -60,7 +60,7 @@ class PiganField(Field):
         base_mlp_num_layers: int = 8,
         base_mlp_layer_width: int = 256,
         head_mlp_num_layers: int = 1,
-        head_mlp_layer_width: int = 128,
+        head_mlp_layer_width: int = 256,
         skip_connections: Tuple[int] = (4,),
         siren_omega: int = 30,
         field_heads: Tuple[FieldHead] = (RGBFieldHead(),),

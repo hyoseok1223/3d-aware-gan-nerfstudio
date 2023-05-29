@@ -116,7 +116,7 @@ class PiganDataParser(DataParser):
             cy=cy,
             camera_type=CameraType.PERSPECTIVE,
         )
-        print(camera_to_world.shape)
+        # print(camera_to_world.shape)
             
 
         # camera to world가 dictuonary여야함 ->지금 그냥 tensor

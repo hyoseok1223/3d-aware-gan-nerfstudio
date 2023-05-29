@@ -79,7 +79,7 @@ def could_use_op(input):
     if (not enabled) or (not torch.backends.cudnn.enabled):
         return False
 
-    if input.device.type != "cuda":
+    if list(input.values())[0].device.type != "cuda":
         return False
 
     if any(torch.__version__.startswith(x) for x in ["1.7.", "1.8."]):

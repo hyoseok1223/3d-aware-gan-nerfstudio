@@ -82,7 +82,8 @@ class EqualConv2d(nn.Module):
             self.bias = None
 
     def forward(self, input):
-        out = conv2d_gradfix.conv2d(
+        # out = conv2d_gradfix.conv2d(
+        out = F.conv2d(
             input,
             self.weight * self.scale,
             bias=self.bias,

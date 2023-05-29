@@ -20,6 +20,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Tuple, Type
+from collections import defaultdict
 
 import torch
 from torch.nn import Parameter
@@ -64,7 +65,7 @@ class GenerativeModelConfig(ModelConfig):
     """specifies number of rays per chunk during eval"""
 
     #NOTE - If do hierarchical sampling, need to set below options 
-    num_coarse_samples: int = 128
+    num_coarse_samples: int = 2
     """Number of samples in coarse field evaluation"""
     # num_importance_samples: int = 128
     """Number of samples in fine field evaluation"""
@@ -171,14 +172,18 @@ class PiganModel(Model):
         freq = freq_offsets[..., :freq_offsets.shape[-1]//2] * (self.field_coarse.siren_omega/2) + self.field_coarse.siren_omega
         phase_shifts = freq_offsets[..., freq_offsets.shape[-1]//2:]
 
-        latents = self.latent(freq = freq,phase_shift = phase_shift)
+        latents = self.latent(freq = freq,phase_shift = phase_shifts)
     
+        
+
         # uniform sampling
         ray_samples_uniform = self.sampler_uniform(ray_bundle)
         # if self.temporal_distortion is not None:
         #     offsets = self.temporal_distortion(ray_samples_uniform.frustums.get_positions(), ray_samples_uniform.times)
         #     ray_samples_uniform.frustums.set_offsets(offsets)
 
+        # print('왜 128')
+        # print(ray_samples_uniform.shape)
         # coarse field:
         field_outputs_coarse = self.field_coarse.forward(ray_samples_uniform, latents)
         weights_coarse = ray_samples_uniform.get_weights(field_outputs_coarse[FieldHeadNames.DENSITY])
@@ -228,13 +233,14 @@ class PiganModel(Model):
         if self.collider is not None:
             ray_bundle = self.collider(ray_bundle)
  
-        num_rays_per_chunk = self.config.train_num_rays_per_chunk
-        image_height, image_width = camera_ray_bundle.origins.shape[:2]
-        num_rays = len(camera_ray_bundle)
+        # num_rays_per_chunk = self.config.train_num_rays_per_chunk
+        image_height, image_width = ray_bundle.origins.shape[:2]
+        self.image_height, self.image_width = image_height, image_width
+        num_rays = len(ray_bundle)
         outputs_lists = defaultdict(list)
 
-        ray_bundle = camera_ray_bundle.get_row_major_sliced_ray_bundle(0, num_rays)
-        outputs = self.get_outputs(ray_bundle=ray_bundle) # .view(image_height, image_width, -1) 
+        ray_bundle = ray_bundle.get_row_major_sliced_ray_bundle(0, num_rays)
+        outputs = self.get_outputs(ray_bundle=ray_bundle, latent = latent) # .view(image_height, image_width, -1) 
         # for i in range(0, num_rays, num_rays_per_chunk):
         #     start_idx = i
         #     end_idx = i + num_rays_per_chunk
@@ -254,9 +260,16 @@ class PiganModel(Model):
 
     #REVIEW 
     def get_discriminator(self, model_outputs, batch=None):
-        fake_pred = self.discriminator(model_outputs)
+        #FIXME - 우선 지금 여기서 Rendering된 결과를 바꾸긴 할건데. train즉 generator아웃풋과 이거의 바꾸는 로직이 같아야하고 그냥 resize로 될 것같으니 다시 체크해보자.
+        model_outputs['rgb_coarse'] = model_outputs['rgb_coarse'].reshape(1,-1,self.image_height, self.image_width) # 3channel인 이유가 RGB임. not x,y,z 맨 초기거 다시 체크
+        fake_pred = self.discriminator(model_outputs['rgb_coarse'])
+        # 지금 이거는 16384 x 3 이다. 즉 3짜리가 쌓여있는 상태다.
+        # batch -> 가 되어야하고
+        # 16384가 nxn으로 바뀌어야한다. 
+        # 이걸 어떻게 복원하는지 다시 체크하고 여기다 이식해야한다.
+        # FIXME
         if batch is not None:
-            real_pred = self.discriminator(batch['image'])
+            real_pred = self.discriminator(batch['image'].reshape(1,-1,self.image_height, self.image_width))
             return fake_pred, real_pred
         else:
             return fake_pred
@@ -268,10 +281,10 @@ class PiganModel(Model):
 
         # type g
         if len(preds)==1:
-            g_loss = self.generator_loss(preds, step)
+            g_loss = self.generator_loss(preds, step = step)
             loss_dict = {"generator_loss": g_loss}
         elif len(preds)==2:
-            d_loss = self.discriminator_loss(preds, step)
+            d_loss = self.discriminator_loss(preds,step = step,real_img = image)
             loss_dict = {"discriminator_loss": d_loss}
         return loss_dict
     
@@ -297,6 +310,6 @@ class PiganModel(Model):
         field_parameters = list(self.field_coarse.parameters()) + list(self.field_fine.parameters())
         self.requires_grad(field_parameters, True)
 
-    def requires_grad(self, paramters, flag):
-        for paramter in parameters:
+    def requires_grad(self, parameters, flag):
+        for parameter in parameters:
             parameter.requires_grad = flag

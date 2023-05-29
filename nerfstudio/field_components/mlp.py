@@ -131,7 +131,16 @@ class FilmWrapper(nn.Module):
         self.layer = layer
 
     def forward(self, x, freq, phase_shift):
-        x = self.layer(x)
+        x = self.layer(x) # torch.Size([16384, 128, 256])
+        # print(x.shape)
+        # 16384는 256x256값으로 ray들의 개수다. ray들의 개수 만큼 확장되어서, 
+        # 128이 의미하는 바는 sampling된 ray marching
+        # 우선 배치사이즈를 1로 설정해보자.
+        # print(freq.shape) # torch.Size([4, 256])
+        # 4는 배치사이즈 일 것이고, 256는 freq사이즈므로맞고
+        if len(freq.shape) == 1:
+            freq = freq.unsqueeze(0)
+            phase_shift = phase_shift.unsqueeze(0)
         freq = freq.unsqueeze(1).expand_as(x)
         phase_shift = phase_shift.unsqueeze(1).expand_as(x)
         return freq * x + phase_shift
@@ -157,7 +166,7 @@ class SIREN(FieldComponent):
         skip_connections: Optional[Tuple[int]] = None,
         film: bool = False,
         first_omega: int =30,
-        hidden_omega: int = 30.
+        hidden_omega: int = 30.,
     ) -> None:
 
         super().__init__()
@@ -187,6 +196,7 @@ class SIREN(FieldComponent):
                     layers.append(SineLinear(self.layer_width + self.in_dim, self.layer_width, omega = self.hidden_omega))
                 else:
                     layers.append(SineLinear(self.layer_width, self.layer_width, omega = self.hidden_omega))
+
             layers.append(SineLinear(self.layer_width, self.out_dim, is_last=True, omega = self.hidden_omega))
         self.layers = nn.ModuleList(layers)
 
@@ -200,13 +210,21 @@ class SIREN(FieldComponent):
             MLP network output
         """
         x = in_tensor
+        # FIXME - frequencies = frequencies*15 + 30
+        # self.hidden_dim 
+        # latents = {k:v for k,v in latents.items()}
         for i, layer in enumerate(self.layers):
             # as checked in `build_nn_modules`, 0 should not be in `_skip_connections`
             if i in self._skip_connections:
                 x = torch.cat([in_tensor, x], -1)
             if self.film:
-                latent = {k:v[i] for k,v in latents.items()}
+                start = i * self.layer_width
+                end = (i+1) * self.layer_width
+                latent = {k:v[...,start:end] for k,v in latents.items()}
+                # print('*****여기')
+                # print(x.shape)
                 x = FilmWrapper(layer)(x, **latent) # freq, shift
             else:
                 x = layer(x)
+
         return x

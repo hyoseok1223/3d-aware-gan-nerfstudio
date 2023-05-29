@@ -341,7 +341,7 @@ class MiDaSMSELoss(nn.Module):
     def __init__(self, reduction_type: Literal["image", "batch"] = "batch"):
         super().__init__()
 
-        self.reduction_type = reduction_type
+        self.reduction_type: Literal["image", "batch"] = reduction_type
         # reduction here is different from the image/batch-based reduction. This is either "mean" or "sum"
         self.mse_loss = MSELoss(reduction="none")
 
@@ -510,7 +510,7 @@ class GANLoss(nn.Module):
 
 
     def forward(
-        self, preds: List[TensorType['batch', 1]], **kwargs
+        self, preds: List[TensorType['batch', 1]], step, real_img=None#**kwargs
         # real_pred: TensorType['batch', 1], fake_pred: TensorType['batch', 1], **kwargs # real_img = []
         # self, prediction: TensorType[1, 32, "mult"], target: TensorType[1, 32, "mult"], mask: TensorType[1, 32, "mult"] # 여기도 바뀌어야하는게 입력이 real / fake임.
     ) -> TensorType[0]:
@@ -525,15 +525,20 @@ class GANLoss(nn.Module):
             fake_pred, real_pred = preds
             loss_Dmain = self.non_saturating_loss(-real_pred).mean() + self.non_saturating_loss(fake_pred).mean()
             loss = loss_Dmain
-            if step % self.reg_step == 0:
-                loss_r1 = self.r1_regularization(real_pred,real_img) * (self.r1_gamma/2) # *args같은거 쓰면 될 듯.
-                loss += loss_r1
+            # FIXME - 왜 인지 안되어서 우선 주석.
+            # if step % self.reg_step == 0:
+            #     loss_r1 = self.r1_regularization(real_pred,real_img) * (self.r1_gamma/2) # *args같은거 쓰면 될 듯.
+            #     loss += loss_r1
         return loss
             
 
     def r1_regularization(self, real_pred, real_img):
+        real_img.requires_grad = True
         with conv2d_gradfix.no_weight_gradients():
-            grad_real = torch.autograd.grad(outputs = real_pred.sum(), inputs=real_img, create_graph=True)
+            grad_real = torch.autograd.grad(outputs = real_pred.sum(), inputs=real_img, create_graph=True, allow_unused=True)
+            # print('grad real')
+            # print(grad_real)
+            # 이게 왜 none이 나오지..?
             grad_penalty = grad_real.pow(2).reshape(grad_real.shape[0], -1).sum(1).mean()
         return grad_penalty
          
